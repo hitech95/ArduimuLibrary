@@ -6,7 +6,7 @@
 // Version 1.9 Support for ArduIMU V3 Hardware with MPU6000 and HMC5883 magnetometer (SCP1000 absolute pressure sensor is not supported in this version)
 // Version 1.9.6 Works on Arduino 1.0.1 IDE
 // Version 1.9.7 Roll and Patch are Calibrates
-// Version 2.0.0 Hitech95 Fixes
+// Version 2.0.0 Hitech95 Fixes - Implemets BMP085 for pressure and Temperature. Also Light Sensor
 // for mor info on mpu6000 vD and Artem Grigoryev solution :
 // http://diydrones.com/forum/topics/arduimu-v3-all-axes-output-wrong-values
 
@@ -19,7 +19,6 @@
 #include <Wire.h>
 #include <FastSerial.h>        // ArduPilot Fast Serial Library
 #include <AP_GPS.h>            // ArduPilot GPS library
-#include <Adafruit_BMP085.h>   // Adafruit Pressure Library
 
 
 //**********************************************************************
@@ -76,7 +75,7 @@
 #define MAG_OFFSET_Z 0
 
 /* Support for optional barometer (1 enabled, 0 dissabled) */
-#define USE_BAROMETER 0     // use 1 if you want to get altitude using the optional absolute pressure sensor
+#define USE_BAROMETER 1     // use 1 if you want to get altitude using the optional absolute pressure sensor
 #define ALT_MIX    50            // For binary messages: GPS or barometric altitude.  0 to 100 = % of barometric.  For example 75 gives 25% GPS alt and 75% baro
 
 //**********************************************************************
@@ -165,12 +164,18 @@ boolean groundstartDone = false;    // Used to not repeat ground start
 float AN[8]; //array that store the 6 ADC filtered data
 float AN_OFFSET[8]; //Array that stores the Offset of the gyros
 
-float Accel_Vector[3] = {0, 0, 0}; //Store the acceleration in a vector
-float Gyro_Vector[3] = {0, 0, 0}; //Store the gyros rutn rate in a vector
-float Omega_Vector[3] = {0, 0, 0}; //Corrected Gyro_Vector data
-float Omega_P[3] = {0, 0, 0}; //Omega Proportional correction
-float Omega_I[3] = {0, 0, 0}; //Omega Integrator
-float Omega[3] = {0, 0, 0};
+float Accel_Vector[3] = {
+  0, 0, 0}; //Store the acceleration in a vector
+float Gyro_Vector[3] = {
+  0, 0, 0}; //Store the gyros rutn rate in a vector
+float Omega_Vector[3] = {
+  0, 0, 0}; //Corrected Gyro_Vector data
+float Omega_P[3] = {
+  0, 0, 0}; //Omega Proportional correction
+float Omega_I[3] = {
+  0, 0, 0}; //Omega Integrator
+float Omega[3] = {
+  0, 0, 0};
 
 // Euler angles
 float roll;
@@ -179,8 +184,10 @@ float yaw;
 
 int toggleMode = 0;
 
-float errorRollPitch[3] = {0, 0, 0};
-float errorYaw[3] = {0, 0, 0};
+float errorRollPitch[3] = {
+  0, 0, 0};
+float errorYaw[3] = {
+  0, 0, 0};
 float errorCourse = 180;
 float COGX = 0; //Course overground X axis
 float COGY = 1; //Course overground Y axis
@@ -199,7 +206,14 @@ float DCM_Matrix[3][3] = {
     0, 0, 1
   }
 };
-float Update_Matrix[3][3] = {{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}; //Gyros here
+float Update_Matrix[3][3] = {
+  {
+    0, 1, 2        }
+  , {
+    3, 4, 5        }
+  , {
+    6, 7, 8        }
+}; //Gyros here
 
 float Temporary_Matrix[3][3] = {
   {
@@ -224,18 +238,24 @@ volatile uint8_t analog_count[8];
 
 
 #if BOARD_VERSION == 1
-uint8_t sensors[6] = {0, 2, 1, 3, 5, 4}; // Use these two lines for Hardware v1 (w/ daughterboards)
-int SENSOR_SIGN[] = {1, -1, 1, -1, 1, -1, -1, -1, -1}; //Sensor: GYROX, GYROY, GYROZ, ACCELX, ACCELY, ACCELZ
+uint8_t sensors[6] = {
+  0, 2, 1, 3, 5, 4}; // Use these two lines for Hardware v1 (w/ daughterboards)
+int SENSOR_SIGN[] = {
+  1, -1, 1, -1, 1, -1, -1, -1, -1}; //Sensor: GYROX, GYROY, GYROZ, ACCELX, ACCELY, ACCELZ
 #endif
 
 #if BOARD_VERSION == 2
-uint8_t sensors[6] = {6, 7, 3, 0, 1, 2}; // For Hardware v2 flat
-int SENSOR_SIGN[] = {1, -1, -1, 1, -1, 1, -1, -1, -1};
+uint8_t sensors[6] = {
+  6, 7, 3, 0, 1, 2}; // For Hardware v2 flat
+int SENSOR_SIGN[] = {
+  1, -1, -1, 1, -1, 1, -1, -1, -1};
 #endif
 
 #if BOARD_VERSION == 3
-uint8_t sensors[6] = {0, 1, 2, 3, 4, 5}; // For Hardware v3 (MPU6000)
-int SENSOR_SIGN[] = {1, -1, -1, -1, 1, 1, -1, 1, -1};
+uint8_t sensors[6] = {
+  0, 1, 2, 3, 4, 5}; // For Hardware v3 (MPU6000)
+int SENSOR_SIGN[] = {
+  1, -1, -1, -1, 1, 1, -1, 1, -1};
 #endif
 
 
@@ -268,7 +288,24 @@ float Heading_Y;
 #endif
 
 #if USE_BAROMETER == 1
-Adafruit_BMP085 bmp;
+
+#include <Adafruit_Sensor.h> // Adafruit Sensors Library.
+#include <Adafruit_BMP085_U.h> // Adafruit Pressure Library.  
+
+Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
+
+//Temp Values
+float tmp_temp = 0;
+float tmp_pres = 0;
+      
+float press_filt = 0;  // pressure in pa
+float temp_filt = 0;  // pressure in pa
+
+float press_gnd = 0;  // Ground pressure in pa
+float alt_gnd = 0;  // Ground altitude in centimeters
+float temp_gnd = 0;  // Ground temp in Celsius
+
+float pressure_sea = 0;  // Sea Level Pressure
 #endif
 //*****************************************************************************************
 void setup()
@@ -277,7 +314,8 @@ void setup()
   pinMode(SERIAL_MUX_PIN, OUTPUT); //Serial Mux
   if (GPS_CONNECTION == 0) {
     digitalWrite(SERIAL_MUX_PIN, HIGH); //Serial Mux
-  } else {
+  } 
+  else {
     digitalWrite(SERIAL_MUX_PIN, LOW); //Serial Mux
   }
 
@@ -337,13 +375,14 @@ void setup()
   // SETUP FOR Barometer
 #if USE_BAROMETER==1
   debug_handler(4);
-  bmp.begin()();
+  bmp.begin();
 #endif
 
   if (ENABLE_AIR_START) {
     debug_handler(1);
     startup_air();
-  } else {
+  } 
+  else {
     debug_handler(2);
     startup_ground();
   }
@@ -388,9 +427,9 @@ void loop() //Main Loop
 
     Euler_angles();
 
-    #if PRINT_BINARY == 1
+#if PRINT_BINARY == 1
     printdata(); //Send info via serial
-    #endif
+#endif
 
     //Turn on the LED when you saturate any of the gyros.
     if ((abs(Gyro_Vector[0]) >= ToRad(300)) || (abs(Gyro_Vector[1]) >= ToRad(300)) || (abs(Gyro_Vector[2]) >= ToRad(300)))
@@ -410,82 +449,92 @@ void loop() //Main Loop
     // and balances the processing load across main loop cycles.
     switch (cycleCount) {
       case (0):
-        GPS.update();
-        break;
+      GPS.update();
+      break;
 
       case (1):
-        break;
+      break;
 
       case (2):
 #if USE_BAROMETER==1
-        press_filt = (press + 30 * bmp.readPressure()) / 3l;		//Light filtering
+      tmp_temp = 0;
+      tmp_pres = 0;
+
+      bmp.getTemperature(&tmp_temp);
+      bmp.getPressure(&tmp_pres);
+
+      press_filt = (press_filt * 29 + tmp_pres) / 30;		//Light filtering
+      temp_filt = (temp_filt * 29 + tmp_temp) / 30;		//Light filtering
 #endif
-        break;
+      break;
 
       case (3):
 #if USE_MAGNETOMETER==1
 #if BOARD_VERSION < 3
-        APM_Compass.Read();     // Read magnetometer
-        APM_Compass.Calculate(roll, pitch); // Calculate heading
+      APM_Compass.Read();     // Read magnetometer
+      APM_Compass.Calculate(roll, pitch); // Calculate heading
 #endif
 #if BOARD_VERSION == 3
-        HMC5883_read();                   // Read magnetometer
-        HMC5883_calculate(roll, pitch);   // Calculate heading
+      HMC5883_read();                   // Read magnetometer
+      HMC5883_calculate(roll, pitch);   // Calculate heading
 #endif
 #endif
-        break;
+      break;
 
       case (4):
-        // Display Status on LEDs
-        // GYRO Saturation indication
-        if (gyro_sat >= 1) {
-          digitalWrite(RED_LED_PIN, HIGH); //Turn Red LED when gyro is saturated.
-          if (gyro_sat >= 8) // keep the LED on for 8/10ths of a second
-            gyro_sat = 0;
-          else
-            gyro_sat++;
-        } else {
-          digitalWrite(RED_LED_PIN, LOW);
-        }
+      // Display Status on LEDs
+      // GYRO Saturation indication
+      if (gyro_sat >= 1) {
+        digitalWrite(RED_LED_PIN, HIGH); //Turn Red LED when gyro is saturated.
+        if (gyro_sat >= 8) // keep the LED on for 8/10ths of a second
+          gyro_sat = 0;
+        else
+          gyro_sat++;
+      } 
+      else {
+        digitalWrite(RED_LED_PIN, LOW);
+      }
 
-        // YAW drift correction indication
-        if (GPS.ground_speed < SPEEDFILT * 100) {
-          digitalWrite(YELLOW_LED_PIN, HIGH);   //  Turn on yellow LED if speed too slow and yaw correction supressed
-        } else {
-          digitalWrite(YELLOW_LED_PIN, LOW);
-        }
+      // YAW drift correction indication
+      if (GPS.ground_speed < SPEEDFILT * 100) {
+        digitalWrite(YELLOW_LED_PIN, HIGH);   //  Turn on yellow LED if speed too slow and yaw correction supressed
+      } 
+      else {
+        digitalWrite(YELLOW_LED_PIN, LOW);
+      }
 
-        // GPS Fix indication
-        switch (GPS.status()) {
-          case (2):
-            digitalWrite(BLUE_LED_PIN, HIGH); //Turn Blue LED when gps is fixed.
-            break;
+      // GPS Fix indication
+      switch (GPS.status()) {
+        case (2):
+        digitalWrite(BLUE_LED_PIN, HIGH); //Turn Blue LED when gps is fixed.
+        break;
 
-          case (1):
-            if (GPS.valid_read == true) {
-              toggleMode = abs(toggleMode - 1); // Toggle blue light on and off to indicate NMEA sentences exist, but no GPS fix lock
-              if (toggleMode == 0) {
-                digitalWrite(BLUE_LED_PIN, LOW); // Blue light off
-              } else {
-                digitalWrite(BLUE_LED_PIN, HIGH); // Blue light on
-              }
-              GPS.valid_read = false;
-            }
-            break;
-
-          default:
-            digitalWrite(BLUE_LED_PIN, LOW);
-            break;
+        case (1):
+        if (GPS.valid_read == true) {
+          toggleMode = abs(toggleMode - 1); // Toggle blue light on and off to indicate NMEA sentences exist, but no GPS fix lock
+          if (toggleMode == 0) {
+            digitalWrite(BLUE_LED_PIN, LOW); // Blue light off
+          } 
+          else {
+            digitalWrite(BLUE_LED_PIN, HIGH); // Blue light on
+          }
+          GPS.valid_read = false;
         }
         break;
+
+      default:
+        digitalWrite(BLUE_LED_PIN, LOW);
+        break;
+      }
+      break;
 
       case (5):
-        cycleCount = -1;
-        // Reset case counter, will be incremented to zero before switch statement
+      cycleCount = -1;
+      // Reset case counter, will be incremented to zero before switch statement
 #if PRINT_BINARY == 0
-        printdata(); //Send info via serial
+      printdata(); //Send info via serial
 #endif
-        break;
+      break;
     }
 
 
@@ -527,12 +576,19 @@ void startup_ground(void)
     AN_OFFSET[y] = AN[y];
 
 #if USE_BAROMETER==1
-  press_gnd = bmp.readPressure();
-  temperature = bmp.readTemperature();
+
+  tmp_temp = 0;
+  tmp_pres = 0;
+
+  bmp.getTemperature(&tmp_temp);
+  bmp.getPressure(&tmp_pres);
+
+  temp_gnd = tmp_temp;
+  press_gnd = tmp_pres;
   delay(20);
 #endif
-
-  for (int i = 0; i < 400; i++) // We take some readings...
+  // We take some readings...
+  for (int i = 0; i < 400; i++) 
   {
     Read_adc_raw();
     for (int y = 0; y <= 5; y++) // Read initial ADC values for offset (averaging).
@@ -547,8 +603,14 @@ void startup_ground(void)
       flashcount = 0;
 
 #if USE_BAROMETER==1
-      press_gnd = (press_gnd * 100 + bmp.readPressure()) / 10l;
-      temperature = (temperature * 9 + bmp.readTemperature()) / 10;
+      float temp = 0;
+      float pres = 0;
+
+      bmp.getTemperature(&temp);
+      bmp.getPressure(&pres);
+
+      press_gnd = (press_gnd * 99 + pres) / 100;
+      temp_gnd = (temp_gnd * 9 + temp) / 10;
 #endif
 
       digitalWrite(YELLOW_LED_PIN, HIGH);
@@ -586,14 +648,18 @@ void startup_ground(void)
   }
 
 #if USE_BAROMETER==1
-  press_filt = press_gnd;
-  ground_alt = GPS.altitude;
+  alt_gnd = GPS.altitude;
   eeprom_busy_wait();
   eeprom_write_dword((uint32_t *)0x10, press_gnd);
   eeprom_busy_wait();
-  eeprom_write_word((uint16_t *)0x14, temperature);
+  eeprom_write_word((uint16_t *)0x14, temp_gnd);
   eeprom_busy_wait();
-  eeprom_write_word((uint16_t *)0x16, (ground_alt / 100));
+  eeprom_write_word((uint16_t *)0x16, (alt_gnd / 100));
+  
+  press_filt = press_gnd;
+  temp_filt = temp_gnd;
+
+  pressure_sea = bmp.seaLevelForAltitude(alt_gnd, press_gnd, temp_gnd);
 #endif
 
   groundstartDone = true;
@@ -623,10 +689,12 @@ void startup_air(void)
   press_gnd = eeprom_read_dword((uint32_t *) 0x10);
   press_filt = press_gnd;
   eeprom_busy_wait();
-  temperature = eeprom_read_word((uint16_t *) 0x14);
+  temp_gnd = eeprom_read_word((uint16_t *) 0x14);
   eeprom_busy_wait();
-  ground_alt = eeprom_read_word((uint16_t *) 0x16);
-  ground_alt *= 100;
+  alt_gnd = eeprom_read_word((uint16_t *) 0x16);
+  alt_gnd *= 100;
+
+  pressure_sea = bmp.seaLevelForAltitude(alt_gnd, press_gnd, temp_gnd);
 #endif
   Serial.println("***Air Start complete");
 }
@@ -649,46 +717,46 @@ void debug_handler(byte message)
 
   switch (message)
   {
-    case 0:
-      Serial.print("???Software Version ");
-      Serial.print(SOFTWARE_VER);
-      Serial.println("***");
-      break;
+  case 0:
+    Serial.print("???Software Version ");
+    Serial.print(SOFTWARE_VER);
+    Serial.println("***");
+    break;
 
-    case 1:
-      Serial.println("???Air Start!***");
-      break;
+  case 1:
+    Serial.println("???Air Start!***");
+    break;
 
-    case 2:
-      Serial.println("???Ground Start!***");
-      break;
+  case 2:
+    Serial.println("???Ground Start!***");
+    break;
 
-    case 3:
-      Serial.println("???Enabling Magneto...***");
-      break;
+  case 3:
+    Serial.println("???Enabling Magneto...***");
+    break;
 
-    case 4:
-      Serial.println("???Enabling Pressure Altitude...***");
-      break;
+  case 4:
+    Serial.println("???Enabling Pressure Altitude...***");
+    break;
 
-    case 5:
-      Serial.println("???Air Start complete");
-      break;
+  case 5:
+    Serial.println("???Air Start complete");
+    break;
 
-    case 6:
-      Serial.println("???Ground Start complete");
-      break;
+  case 6:
+    Serial.println("???Ground Start complete");
+    break;
 
-    case 10:
-      BAD_Checksum++;
-      Serial.print("???GPS Bad Checksum: ");
-      Serial.print(BAD_Checksum);
-      Serial.println("...***");
-      break;
+  case 10:
+    BAD_Checksum++;
+    Serial.print("???GPS Bad Checksum: ");
+    Serial.print(BAD_Checksum);
+    Serial.println("...***");
+    break;
 
-    default:
-      Serial.println("???Invalid debug ID...***");
-      break;
+  default:
+    Serial.println("???Invalid debug ID...***");
+    break;
 
   }
 #endif
@@ -697,29 +765,33 @@ void debug_handler(byte message)
 
 /*
 EEPROM memory map
+ 
+ 0 0x00		Unused
+ 1 0x01 		..
+ 2 0x02 		AN_OFFSET[0]
+ 3 0x03 		..
+ 4 0x04 		AN_OFFSET[1]
+ 5 0x05 		..
+ 6 0x06 		AN_OFFSET[2]
+ 7 0x07 		..
+ 8 0x08 		AN_OFFSET[3]
+ 9 0x09 		..
+ 10 0x0A		AN_OFFSET[4]
+ 11 0x0B		..
+ 12 0x0C		AN_OFFSET[5]
+ 13 0x0D		..
+ 14 0x0E		Unused
+ 15 0x0F		..
+ 16 0x10		Ground Pressure
+ 17 0x11		..
+ 18 0x12		..
+ 19 0x13		..
+ 20 0x14		Ground Temp
+ 21 0x15		..
+ 22 0x16		Ground Altitude
+ 23 0x17		..
+ */
 
-0 0x00		Unused
-1 0x01 		..
-2 0x02 		AN_OFFSET[0]
-3 0x03 		..
-4 0x04 		AN_OFFSET[1]
-5 0x05 		..
-6 0x06 		AN_OFFSET[2]
-7 0x07 		..
-8 0x08 		AN_OFFSET[3]
-9 0x09 		..
-10 0x0A		AN_OFFSET[4]
-11 0x0B		..
-12 0x0C		AN_OFFSET[5]
-13 0x0D		..
-14 0x0E		Unused
-15 0x0F		..
-16 0x10		Ground Pressure
-17 0x11		..
-18 0x12		..
-19 0x13		..
-20 0x14		Ground Temp
-21 0x15		..
-22 0x16		Ground Altitude
-23 0x17		..
-*/
+
+
+

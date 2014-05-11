@@ -85,11 +85,11 @@ void printdata(void)
 
 #if USE_BAROMETER == 1
   Serial.print("Temp:");
-  Serial.print();      // Convert into degrees C
+  Serial.print(temp_filt);
   Serial.print(",Pressure: ");
-  Serial.print();           
+  Serial.print(press_filt);           
   Serial.print(",Alt: ");
-  Serial.print();  // Original floating point full solution in meters
+  Serial.print(bmp.pressureToAltitude(pressure_sea,  press_filt,  temp_filt));
   Serial.print (",");
 #endif
 
@@ -157,8 +157,7 @@ void printdata(void)
 #if USE_BAROMETER==0
     tempint=GPS.altitude / 100;   // Altitude MSL in meters * 10 in 2 bytes
 #else
-    alti();
-    tempint = (press_alt * ALT_MIX + GPS.altitude * (100-ALT_MIX)) / 10000;	//Blended GPS and pressure altitude
+    tempint = (bmp.pressureToAltitude(pressure_sea,  press_filt,  temp_filt) * ALT_MIX + GPS.altitude * (100-ALT_MIX)) / 10000;	//Blended GPS and pressure altitude
 #endif
     IMU_buffer[10]=tempint&0xff;
     IMU_buffer[11]=(tempint>>8)&0xff;
@@ -314,5 +313,6 @@ long convert_to_dec(float x)
 {
   return x*10000000;
 }
+
 
 
